@@ -4,22 +4,29 @@ import {
   Upload, User, Code, Link as LinkIcon, FileText, 
   Sparkles, Plus, X, ChevronRight, CheckCircle2,
   AlertCircle, Video, Image as ImageIcon, Github,
-  MonitorPlay, Loader2
+  MonitorPlay, Loader2, Info
 } from 'lucide-react';
 import { toast } from 'react-toastify';
 import { useAuth } from '../context/AuthContext';
 
 const SubmitProject = () => {
-  const { API_URL, user } = useAuth();
+  const { API_URL, user, isAuthenticated } = useAuth(); // Destructure isAuthenticated
   const navigate = useNavigate();
   
   // --- State Management ---
   const [step, setStep] = useState(1);
-  const [isAiGenerating, setIsAiGenerating] = useState(false);
+  
+  // Granular Loading States for AI
+  const [aiLoadingState, setAiLoadingState] = useState({
+    shortDescription: false,
+    detailedDescription: false,
+    outcome: false
+  });
+  
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isCustomType, setIsCustomType] = useState(false);
 
-  // Single object for all form data
+  // Main Form Data State
   const [formData, setFormData] = useState({
     // Personal Details
     fullName: '',
@@ -35,7 +42,7 @@ const SubmitProject = () => {
     duration: '',
     startDate: '',
     shortDescription: '',
-    detailedDescription: '', // Field for detailed description
+    detailedDescription: '',
     outcome: '',
     
     // Arrays & Files
@@ -52,18 +59,23 @@ const SubmitProject = () => {
     presentationLink: ''
   });
 
+  // Helper for previews
+  const [imagePreviews, setImagePreviews] = useState([]);
+
   // Helper state for adding a single team member
   const [teamMemberInput, setTeamMemberInput] = useState({ name: '', role: '' });
 
-  // --- 1. Auth Protection & Autofill ---
+  // --- 1. AUTHENTICATION CHECK ---
   useEffect(() => {
-    const token = localStorage.getItem('authToken');
-    if (!token) {
-      toast.warn("Please log in to submit a project.");
+    // If context is loaded (user is defined/undefined) and not authenticated
+    if (isAuthenticated === false) {
+      toast.info("Please login to submit a project.");
       navigate('/login');
-      return;
     }
+  }, [isAuthenticated, navigate]);
 
+  // --- Autofill Effect ---
+  useEffect(() => {
     if (user) {
       setFormData(prev => ({
         ...prev,
@@ -72,7 +84,14 @@ const SubmitProject = () => {
         collegeName: user.college || '',
       }));
     }
-  }, [user, navigate]);
+  }, [user]);
+
+  // Cleanup previews on unmount
+  useEffect(() => {
+    return () => {
+      imagePreviews.forEach(url => URL.revokeObjectURL(url));
+    };
+  }, [imagePreviews]);
 
   // --- Input Handlers ---
 
@@ -101,15 +120,24 @@ const SubmitProject = () => {
       return toast.error("Maximum 4 screenshots allowed per project.");
     }
 
-    const oversizedFiles = files.filter(file => file.size > 2 * 1024 * 1024);
-    if (oversizedFiles.length > 0) {
-      return toast.error("Some images are too large. Max 2MB per image.");
-    }
+    const validFiles = [];
+    const newPreviews = [];
+
+    files.forEach(file => {
+      if (file.size > 2 * 1024 * 1024) {
+        toast.error(`${file.name} is too large. Max 2MB.`);
+      } else {
+        validFiles.push(file);
+        newPreviews.push(URL.createObjectURL(file));
+      }
+    });
 
     setFormData(prev => ({
       ...prev,
-      screenshots: [...prev.screenshots, ...files]
+      screenshots: [...prev.screenshots, ...validFiles]
     }));
+
+    setImagePreviews(prev => [...prev, ...newPreviews]);
   };
 
   const handleVideoChange = (e) => {
@@ -128,6 +156,13 @@ const SubmitProject = () => {
       ...prev,
       screenshots: prev.screenshots.filter((_, i) => i !== index)
     }));
+    
+    URL.revokeObjectURL(imagePreviews[index]);
+    setImagePreviews(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const removeVideo = () => {
+    setFormData(prev => ({ ...prev, videoDemo: null }));
   };
 
   // --- AI Features ---
@@ -136,10 +171,13 @@ const SubmitProject = () => {
     const textToEnhance = formData[field];
     
     if (!textToEnhance) {
-      return toast.warn(`Please write some text in ${field} first.`);
+      const fieldName = field === 'shortDescription' ? 'Short Description' 
+        : field === 'detailedDescription' ? 'Detailed Description' : 'Outcome';
+      return toast.warn(`Please write some text in ${fieldName} first to enhance.`);
     }
 
-    setIsAiGenerating(true);
+    setAiLoadingState(prev => ({ ...prev, [field]: true }));
+
     try {
       const token = localStorage.getItem('authToken');
       const response = await fetch(`${API_URL}/ai/enhance`, {
@@ -155,12 +193,13 @@ const SubmitProject = () => {
       if (!response.ok) throw new Error(data.message || "AI Service Error");
 
       setFormData(prev => ({ ...prev, [field]: data.enhancedText }));
-      toast.success("Text enhanced by AI successfully!");
+      
+      toast.success("Text generated with Markdown formatting!");
     } catch (error) {
       console.error("AI Error:", error);
       toast.error("AI Enhancement failed. Please try again manually.");
     } finally {
-      setIsAiGenerating(false);
+      setAiLoadingState(prev => ({ ...prev, [field]: false }));
     }
   };
 
@@ -179,13 +218,20 @@ const SubmitProject = () => {
   };
 
   const addCustomTech = () => {
-    if (formData.customTech && !formData.technologies.includes(formData.customTech)) {
-      setFormData(prev => ({
-        ...prev,
-        technologies: [...prev.technologies, prev.customTech],
-        customTech: '' 
-      }));
-    } else if (!formData.customTech) {
+    if (formData.customTech) {
+        const normalizedTech = formData.customTech.trim();
+        
+        if (!formData.technologies.includes(normalizedTech)) {
+          setFormData(prev => ({
+            ...prev,
+            technologies: [...prev.technologies, normalizedTech],
+            customTech: ''
+          }));
+          toast.success(`Added ${normalizedTech}`);
+        } else {
+          toast.info(`${normalizedTech} is already selected.`);
+        }
+    } else {
       toast.info("Please type a technology name first.");
     }
   };
@@ -196,7 +242,7 @@ const SubmitProject = () => {
         ...prev,
         teamMembers: [...prev.teamMembers, teamMemberInput]
       }));
-      setTeamMemberInput({ name: '', role: '' }); 
+      setTeamMemberInput({ name: '', role: '' });
     } else {
       toast.warn("Please enter both Name and Role for the team member.");
     }
@@ -209,14 +255,52 @@ const SubmitProject = () => {
     }));
   };
 
+  // --- Validation Logic ---
+
+  const validateStep1 = () => {
+    if (!formData.fullName.trim()) return "Full Name is required.";
+    if (!formData.email.trim()) return "Email is required.";
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(formData.email)) return "Please enter a valid email address.";
+
+    if (!formData.collegeName.trim()) return "College Name is required.";
+    if (!formData.collegeLocation.trim()) return "College Location is required.";
+    if (!formData.yearOfStudy.trim()) return "Year of Study is required.";
+    if (!formData.branch.trim()) return "Branch/Department is required.";
+    return null;
+  };
+
+  const handleNextStep = () => {
+    const error = validateStep1();
+    if (error) {
+      toast.error(error);
+    } else {
+      setStep(2);
+    }
+  };
+
   // --- Final Submission Logic ---
 
   const handleSubmitProject = async () => {
-    if (!formData.projectTitle) return toast.error("Project Title is required.");
-    if (!formData.projectType) return toast.error("Project Type is required.");
-    if (!formData.shortDescription) return toast.error("Short Description is required.");
+    // --- STEP 2 STRICT VALIDATION ---
+    if (!formData.projectTitle.trim()) return toast.error("Project Title is required.");
+    if (!formData.projectType.trim()) return toast.error("Project Type is required.");
+    if (!formData.duration.trim()) return toast.error("Project Duration is required.");
+    if (!formData.startDate) return toast.error("Project Start Date is required.");
+    if (!formData.shortDescription.trim()) return toast.error("Short Description is required.");
+    if (!formData.detailedDescription.trim()) return toast.error("Detailed Description is required.");
+    if (!formData.outcome.trim()) return toast.error("Outcome & Impact is required.");
+    
     if (formData.technologies.length === 0) return toast.error("Please select at least one technology.");
-    if (!formData.githubLink) return toast.error("GitHub Repository link is mandatory.");
+    if (formData.screenshots.length === 0) return toast.error("Please upload at least one screenshot of your project.");
+    
+    if (!formData.githubLink.trim()) return toast.error("GitHub Repository link is mandatory.");
+    
+    try {
+      new URL(formData.githubLink);
+    } catch (_) {
+      return toast.error("Please enter a valid GitHub URL (include http:// or https://)");
+    }
 
     setIsSubmitting(true);
     
@@ -224,17 +308,14 @@ const SubmitProject = () => {
       const token = localStorage.getItem('authToken');
       const data = new FormData();
 
-      // Append Text Fields
       data.append('title', formData.projectTitle);
       data.append('type', formData.projectType);
       data.append('duration', formData.duration);
       data.append('startDate', formData.startDate);
       data.append('shortDescription', formData.shortDescription);
-      // Append Detailed Description
-      data.append('detailedDescription', formData.detailedDescription || formData.shortDescription);
+      data.append('detailedDescription', formData.detailedDescription);
       data.append('outcome', formData.outcome);
 
-      // Append Complex Data
       data.append('technologies', JSON.stringify(formData.technologies));
       data.append('teamMembers', JSON.stringify(formData.teamMembers));
       data.append('links', JSON.stringify({
@@ -244,7 +325,6 @@ const SubmitProject = () => {
         presentation: formData.presentationLink
       }));
 
-      // Append Files
       formData.screenshots.forEach(file => {
         data.append('screenshots', file);
       });
@@ -310,13 +390,7 @@ const SubmitProject = () => {
             </button>
             <div className="w-8 h-px bg-gray-700"></div>
             <button 
-              onClick={() => {
-                if (formData.fullName && formData.email) {
-                  setStep(2);
-                } else {
-                  toast.warn("Please complete basic personal details first.");
-                }
-              }}
+              onClick={handleNextStep}
               className={`flex items-center gap-2 px-6 py-2 rounded-full transition-all ${step === 2 ? 'bg-purple-600 text-white' : 'text-gray-400'}`}
             >
               <Code size={18} />
@@ -391,13 +465,7 @@ const SubmitProject = () => {
 
               <div className="flex justify-end pt-6">
                 <button 
-                  onClick={() => {
-                     if (formData.fullName && formData.email && formData.collegeName) { 
-                      setStep(2);
-                    } else {
-                      toast.error("Please fill in all required fields to proceed.");
-                    }
-                  }}
+                  onClick={handleNextStep}
                   className="flex items-center gap-2 px-8 py-3 bg-white text-black font-bold rounded-xl hover:bg-gray-200 transition-colors"
                 >
                   Next Step <ChevronRight size={18} />
@@ -426,7 +494,7 @@ const SubmitProject = () => {
                     />
                   </div>
                   
-                  {/* Project Type with Custom Option */}
+                  {/* Project Type */}
                   <div className="space-y-2">
                     <label className="text-sm font-medium text-gray-300">Project Type *</label>
                     {!isCustomType ? (
@@ -468,105 +536,144 @@ const SubmitProject = () => {
                     />
                   </div>
                   <div className="space-y-2">
-                    <label className="text-sm font-medium text-gray-300">Project Date</label>
+                    <label className="text-sm font-medium text-gray-300">Project Date *</label>
+                    {/* ADDED style={{ colorScheme: 'dark' }} for visibility */}
                     <input 
                       type="date" name="startDate" value={formData.startDate} onChange={handleInputChange}
                       className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-white focus:border-purple-500 outline-none"
+                      style={{ colorScheme: 'dark' }} 
+                      required
                     />
                   </div>
                 </div>
 
-                {/* AI Fields */}
+                {/* AI Fields - CLEANED OUTPUT */}
+                
+                {/* Short Description */}
                 <div className="space-y-2 mb-6">
                   <div className="flex justify-between items-center">
                     <label className="text-sm font-medium text-gray-300">Short Description *</label>
                     <button 
                       type="button" onClick={() => handleAiEnhance('shortDescription')}
                       className="flex items-center gap-1.5 text-xs font-bold text-purple-400 hover:text-purple-300 transition-colors px-2 py-1 bg-purple-500/10 rounded-lg border border-purple-500/20 disabled:opacity-50"
-                      disabled={isAiGenerating}
+                      disabled={aiLoadingState.shortDescription}
                     >
-                      {isAiGenerating ? <Sparkles className="w-3 h-3 animate-spin" /> : <Sparkles className="w-3 h-3" />}
+                      {aiLoadingState.shortDescription ? <Loader2 className="w-3 h-3 animate-spin" /> : <Sparkles className="w-3 h-3" />}
                       AI Enhance
                     </button>
                   </div>
+                  {/* ADDED: data-lenis-prevent to textarea */}
                   <textarea 
                     name="shortDescription" rows="3" value={formData.shortDescription} onChange={handleInputChange}
                     className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-white focus:border-purple-500 outline-none resize-none"
-                    placeholder="Brief summary of your project..." required
+                    placeholder="Brief summary (e.g., A chatbot for travel planning using React and Gemini API...)" required
+                    data-lenis-prevent
                   ></textarea>
                 </div>
 
-                {/* NEW: Detailed Description Field with AI Enhance */}
+                {/* Detailed Description */}
                 <div className="space-y-2 mb-6">
                   <div className="flex justify-between items-center">
-                    <label className="text-sm font-medium text-gray-300">Detailed Description (Optional)</label>
+                    <label className="text-sm font-medium text-gray-300">Detailed Description *</label>
                     <button 
                       type="button" onClick={() => handleAiEnhance('detailedDescription')}
                       className="flex items-center gap-1.5 text-xs font-bold text-purple-400 hover:text-purple-300 transition-colors px-2 py-1 bg-purple-500/10 rounded-lg border border-purple-500/20 disabled:opacity-50"
-                      disabled={isAiGenerating}
+                      disabled={aiLoadingState.detailedDescription}
                     >
-                      {isAiGenerating ? <Sparkles className="w-3 h-3 animate-spin" /> : <Sparkles className="w-3 h-3" />}
+                      {aiLoadingState.detailedDescription ? <Loader2 className="w-3 h-3 animate-spin" /> : <Sparkles className="w-3 h-3" />}
                       AI Enhance
                     </button>
                   </div>
+                  {/* ADDED: data-lenis-prevent to textarea */}
                   <textarea 
-                    name="detailedDescription" rows="5" value={formData.detailedDescription} onChange={handleInputChange}
-                    className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-white focus:border-purple-500 outline-none resize-none"
-                    placeholder="Provide a comprehensive overview of your project..."
+                    name="detailedDescription" rows="12" value={formData.detailedDescription} onChange={handleInputChange}
+                    className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-white focus:border-purple-500 outline-none resize-none font-mono text-sm"
+                    placeholder="Provide a comprehensive overview of the architecture, challenges solved, features, and technical implementation..." required
+                    data-lenis-prevent
                   ></textarea>
+                  
+                  {/* INFO NOTE */}
+                  <div className="flex items-start gap-2 text-xs text-gray-500 bg-white/5 p-2 rounded-lg border border-white/5">
+                    <Info size={14} className="mt-0.5 text-purple-400" />
+                    <p>
+                      <span className="text-purple-400 font-bold">Note:</span> AI text contains Markdown (e.g., **, ##). 
+                      Ignore these symbols; they will format beautifully on your Project View page.
+                    </p>
+                  </div>
                 </div>
 
+                {/* Outcome */}
                 <div className="space-y-2 mb-6">
-                   <div className="flex justify-between items-center">
-                    <label className="text-sm font-medium text-gray-300">Outcome & Impact</label>
+                    <div className="flex justify-between items-center">
+                    <label className="text-sm font-medium text-gray-300">Outcome & Impact *</label>
                     <button 
                       type="button" onClick={() => handleAiEnhance('outcome')}
                       className="flex items-center gap-1.5 text-xs font-bold text-purple-400 hover:text-purple-300 transition-colors px-2 py-1 bg-purple-500/10 rounded-lg border border-purple-500/20 disabled:opacity-50"
-                      disabled={isAiGenerating}
+                      disabled={aiLoadingState.outcome}
                     >
-                      <Sparkles className="w-3 h-3" /> AI Generate
+                      {aiLoadingState.outcome ? <Loader2 className="w-3 h-3 animate-spin" /> : <Sparkles className="w-3 h-3" />}
+                      AI Generate
                     </button>
                   </div>
+                  {/* ADDED: data-lenis-prevent to textarea */}
                   <textarea 
                     name="outcome" rows="3" value={formData.outcome} onChange={handleInputChange}
                     className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-white focus:border-purple-500 outline-none resize-none"
-                    placeholder="Describe the results and impact..."
+                    placeholder="Describe the results, efficiency improvements, or user feedback..." required
+                    data-lenis-prevent
                   ></textarea>
+
+                  {/* INFO NOTE */}
+                  <div className="flex items-start gap-2 text-xs text-gray-500 bg-white/5 p-2 rounded-lg border border-white/5">
+                    <Info size={14} className="mt-0.5 text-purple-400" />
+                    <p>
+                      <span className="text-purple-400 font-bold">Note:</span> Markdown symbols (**, ###) are preserved here for proper formatting on the detail page.
+                    </p>
+                  </div>
                 </div>
               </div>
 
               {/* Tech Stack */}
               <div>
                  <div className="flex items-center gap-3 mb-4">
-                  <h3 className="text-lg font-semibold text-white">Technologies Used</h3>
+                  <h3 className="text-lg font-semibold text-white">Technologies Used *</h3>
                 </div>
-                <div className="bg-black/40 rounded-xl p-4 border border-white/10 max-h-60 overflow-y-auto custom-scrollbar">
-                  <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
-                    {commonTechStack.map((tech) => (
-                      <label key={tech} className="flex items-center gap-2 cursor-pointer group">
-                        <div className={`w-5 h-5 rounded border flex items-center justify-center transition-colors ${formData.technologies.includes(tech) ? 'bg-purple-600 border-purple-600' : 'border-gray-600 group-hover:border-purple-500'}`}>
-                          {formData.technologies.includes(tech) && <CheckCircle2 size={14} className="text-white" />}
-                        </div>
-                        <input 
-                          type="checkbox" className="hidden"
-                          checked={formData.technologies.includes(tech)}
-                          onChange={() => toggleTech(tech)}
-                        />
-                        <span className={`text-sm ${formData.technologies.includes(tech) ? 'text-white' : 'text-gray-400'}`}>{tech}</span>
+                
+                <div className="flex flex-wrap gap-2 mb-4">
+                  {formData.technologies.length > 0 ? (
+                    formData.technologies.map(tech => (
+                      <span key={tech} onClick={() => toggleTech(tech)} className="px-3 py-1 bg-purple-600/20 text-purple-300 text-xs rounded-full border border-purple-500/30 cursor-pointer hover:bg-red-900/20 hover:text-red-400 flex items-center gap-1 transition-colors">
+                        {tech} <X size={12} />
+                      </span>
+                    ))
+                  ) : (
+                    <span className="text-gray-500 text-xs italic">No technologies selected yet</span>
+                  )}
+                </div>
+
+                <div className="bg-black/40 rounded-xl p-4 border border-white/10 max-h-40 overflow-y-auto custom-scrollbar mb-4">
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                    {commonTechStack.filter(t => !formData.technologies.includes(t)).map(tech => (
+                      <label key={tech} className="flex items-center gap-2 cursor-pointer group p-1 hover:bg-white/5 rounded">
+                        <div className={`w-4 h-4 rounded border border-gray-600 group-hover:border-purple-500`}></div>
+                        <span className="text-xs text-gray-400 group-hover:text-white transition-colors">{tech}</span>
+                        <input type="checkbox" className="hidden" onChange={() => toggleTech(tech)} />
                       </label>
                     ))}
                   </div>
                 </div>
-                <div className="mt-4 flex gap-2">
+                
+                <div className="flex gap-2">
                   <input 
-                    type="text" placeholder="Add a custom technology"
+                    type="text" placeholder="Add a custom technology (e.g. Rust)"
                     value={formData.customTech}
                     onChange={(e) => setFormData(prev => ({...prev, customTech: e.target.value}))}
+                    onKeyPress={(e) => e.key === 'Enter' && addCustomTech()}
                     className="flex-1 bg-black/40 border border-white/10 rounded-lg px-4 py-2 text-sm text-white focus:border-purple-500 outline-none"
                   />
                   <button 
                     onClick={addCustomTech}
-                    className="px-4 py-2 bg-purple-600 text-white text-sm font-bold rounded-lg hover:bg-purple-700"
+                    className="px-4 py-2 bg-purple-600 text-white text-sm font-bold rounded-lg hover:bg-purple-700 transition-colors"
                   >
                     Add
                   </button>
@@ -583,7 +690,7 @@ const SubmitProject = () => {
                          <p className="text-white font-medium">{member.name}</p>
                          <p className="text-xs text-gray-400">{member.role}</p>
                        </div>
-                       <button onClick={() => removeTeamMember(idx)} className="text-gray-500 hover:text-red-400">
+                       <button onClick={() => removeTeamMember(idx)} className="text-gray-500 hover:text-red-400 transition-colors">
                          <X size={16} />
                        </button>
                      </div>
@@ -591,20 +698,20 @@ const SubmitProject = () => {
                    
                    <div className="flex flex-col md:flex-row gap-3 bg-black/40 p-4 rounded-xl border border-white/10 border-dashed">
                      <input 
-                        type="text" placeholder="Team member name"
-                        value={teamMemberInput.name}
-                        onChange={(e) => setTeamMemberInput(prev => ({ ...prev, name: e.target.value }))}
-                        className="flex-1 bg-transparent border-b border-gray-700 text-white px-2 py-1 text-sm focus:border-purple-500 outline-none"
+                       type="text" placeholder="Team member name"
+                       value={teamMemberInput.name}
+                       onChange={(e) => setTeamMemberInput(prev => ({ ...prev, name: e.target.value }))}
+                       className="flex-1 bg-transparent border-b border-gray-700 text-white px-2 py-1 text-sm focus:border-purple-500 outline-none"
                      />
                      <input 
-                        type="text" placeholder="Role (e.g., Frontend Dev)"
-                        value={teamMemberInput.role}
-                        onChange={(e) => setTeamMemberInput(prev => ({ ...prev, role: e.target.value }))}
-                        className="flex-1 bg-transparent border-b border-gray-700 text-white px-2 py-1 text-sm focus:border-purple-500 outline-none"
+                       type="text" placeholder="Role (e.g., Frontend Dev)"
+                       value={teamMemberInput.role}
+                       onChange={(e) => setTeamMemberInput(prev => ({ ...prev, role: e.target.value }))}
+                       className="flex-1 bg-transparent border-b border-gray-700 text-white px-2 py-1 text-sm focus:border-purple-500 outline-none"
                      />
                      <button 
-                        onClick={addTeamMember}
-                        className="text-purple-400 hover:text-white text-sm font-bold whitespace-nowrap flex items-center gap-1"
+                       onClick={addTeamMember}
+                       className="text-purple-400 hover:text-white text-sm font-bold whitespace-nowrap flex items-center gap-1"
                      >
                        <Plus size={16} /> Add Member
                      </button>
@@ -614,72 +721,73 @@ const SubmitProject = () => {
 
               {/* Upload Section */}
               <div>
-                <h3 className="text-lg font-semibold text-white mb-4">Project Files</h3>
+                <h3 className="text-lg font-semibold text-white mb-4">Project Files *</h3>
                 
-                <div className="bg-yellow-500/10 border border-yellow-500/20 rounded-xl p-4 mb-6">
-                  <div className="flex items-center gap-2 text-yellow-400 mb-2">
-                    <AlertCircle size={16} />
-                    <span className="font-bold text-sm">Upload Guidelines</span>
-                  </div>
-                  <div className="grid md:grid-cols-2 gap-4 text-xs text-gray-400">
-                    <ul className="list-disc list-inside space-y-1">
-                      <li>Screenshots: 2MB each (auto-compressed)</li>
-                      <li>Max 4 Screenshots allowed</li>
-                    </ul>
-                    <ul className="list-disc list-inside space-y-1">
-                      <li>Use fewer screenshots (3-4 is ideal)</li>
-                      <li>Video Demo: Max 20MB (Optional)</li>
-                    </ul>
+                <div className="bg-yellow-500/10 border border-yellow-500/20 rounded-xl p-4 mb-6 flex items-start gap-3">
+                  <AlertCircle size={20} className="text-yellow-400 shrink-0 mt-0.5" />
+                  <div>
+                    <span className="font-bold text-sm text-yellow-400 block mb-1">Upload Guidelines</span>
+                    <p className="text-xs text-gray-400">Max 4 screenshots (2MB each). Max 1 video demo (20MB).</p>
                   </div>
                 </div>
 
-                <div className="space-y-4">
-                  <div className="border-2 border-dashed border-white/10 rounded-2xl p-8 text-center hover:border-purple-500/50 hover:bg-purple-500/5 transition-all cursor-pointer relative">
-                    <input 
-                      type="file" 
-                      multiple 
-                      accept="image/*"
-                      onChange={handleFileChange}
-                      className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
-                    />
-                    <div className="w-12 h-12 bg-white/5 rounded-full flex items-center justify-center mx-auto mb-3 text-purple-400">
-                       <ImageIcon />
+                <div className="space-y-6">
+                  {/* Image Upload */}
+                  <div>
+                    <div className="border-2 border-dashed border-white/10 rounded-2xl p-8 text-center hover:border-purple-500/50 hover:bg-purple-500/5 transition-all cursor-pointer relative mb-4">
+                      <input 
+                        type="file" multiple accept="image/*" onChange={handleFileChange}
+                        className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
+                      />
+                      <div className="w-12 h-12 bg-white/5 rounded-full flex items-center justify-center mx-auto mb-3 text-purple-400">
+                         <ImageIcon />
+                      </div>
+                      <p className="text-gray-300 font-medium">Drag & drop screenshots (Required)</p>
+                      <p className="text-xs text-gray-500 mt-2">
+                        {formData.screenshots.length} / 4 files selected
+                      </p>
                     </div>
-                    <p className="text-gray-300 font-medium">Drag and drop screenshots here</p>
-                    <p className="text-xs text-gray-500 mt-2">
-                      {formData.screenshots.length} files selected
-                    </p>
-                  </div>
 
-                  {formData.screenshots.length > 0 && (
-                    <div className="flex flex-wrap gap-2 mt-2">
-                      {formData.screenshots.map((file, idx) => (
-                        <div key={idx} className="flex items-center gap-2 bg-white/10 px-3 py-1 rounded-lg text-xs text-white">
-                          <span className="truncate max-w-[150px]">{file.name}</span>
-                          <button onClick={() => removeFile(idx)} className="text-red-400 hover:text-red-300"><X size={14}/></button>
-                        </div>
-                      ))}
-                    </div>
-                  )}
+                    {imagePreviews.length > 0 && (
+                      <div className="flex flex-wrap gap-4">
+                        {imagePreviews.map((url, idx) => (
+                          <div key={idx} className="relative w-24 h-24 rounded-xl overflow-hidden border border-white/20 group">
+                            <img src={url} alt="Preview" className="w-full h-full object-cover" />
+                            <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                              <button onClick={() => removeFile(idx)} className="p-1.5 bg-red-500/80 rounded-full text-white hover:bg-red-600 transition-colors">
+                                <X size={16} />
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                   
-                  {/* Video Input */}
+                  {/* Video Upload (Optional) */}
                   <div className="flex items-center gap-4 bg-black/40 p-4 rounded-xl border border-white/10 relative">
-                    <Video className="text-gray-400" size={20} />
+                    <Video className="text-gray-400" size={24} />
                     <div className="flex-1">
                       <p className="text-sm text-gray-300 font-medium">
                         {formData.videoDemo ? formData.videoDemo.name : "Upload Demo Video (Optional)"}
                       </p>
-                      <p className="text-xs text-gray-500">Max 20MB</p>
+                      <p className="text-xs text-gray-500">
+                        {formData.videoDemo ? `${(formData.videoDemo.size / 1024 / 1024).toFixed(2)} MB` : "Max 20MB"}
+                      </p>
                     </div>
-                    <input 
-                      type="file" 
-                      accept="video/*"
-                      onChange={handleVideoChange}
-                      className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
-                    />
-                    <button className="text-xs bg-white/10 hover:bg-white/20 text-white px-3 py-1.5 rounded-lg transition-colors pointer-events-none">
-                      Choose File
-                    </button>
+                    
+                    {formData.videoDemo ? (
+                       <button onClick={removeVideo} className="text-xs bg-red-500/10 hover:bg-red-500/20 text-red-400 px-3 py-1.5 rounded-lg transition-colors border border-red-500/20 z-20">
+                         Remove
+                       </button>
+                    ) : (
+                      <div className="relative">
+                         <input type="file" accept="video/*" onChange={handleVideoChange} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"/>
+                         <button className="text-xs bg-white/10 hover:bg-white/20 text-white px-3 py-1.5 rounded-lg transition-colors pointer-events-none">
+                           Choose File
+                         </button>
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
@@ -737,7 +845,10 @@ const SubmitProject = () => {
                   className="flex-1 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white font-bold py-3 rounded-xl transition-all shadow-lg shadow-purple-900/20 transform hover:scale-[1.01] disabled:opacity-70 disabled:cursor-not-allowed flex justify-center items-center gap-2"
                 >
                   {isSubmitting ? (
-                    <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                    <>
+                      <Loader2 className="w-5 h-5 animate-spin" /> 
+                      <span>Submitting...</span>
+                    </>
                   ) : "Submit Project"}
                 </button>
               </div>

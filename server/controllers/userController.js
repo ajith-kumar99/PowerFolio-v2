@@ -15,8 +15,8 @@ const getUserProfile = asyncHandler(async (req, res) => {
       email: user.email,
       role: user.role,
       profilePicture: user.profilePicture,
-      college: user.college,
-      about: user.about
+      college: user.college, // This was correct
+      about: user.about      // This was correct
     });
   } else {
     res.status(404);
@@ -54,8 +54,11 @@ const updateUserProfile = asyncHandler(async (req, res) => {
       email: updatedUser.email,
       role: updatedUser.role,
       profilePicture: updatedUser.profilePicture,
-      token: req.headers.authorization.split(' ')[1] // Return same token
+      college: updatedUser.college, // Added this
+      about: updatedUser.about,     // Added this
+      token: req.headers.authorization.split(' ')[1] 
     });
+    
   } else {
     res.status(404);
     throw new Error('User not found');

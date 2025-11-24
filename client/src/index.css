@@ -3,8 +3,10 @@
 /* Tailwind v4 Global Reset & Theme setup */
 @theme {
   --color-primary: #000000;
-  --color-secondary: #9333ea; /* Purple-600 */
-  --color-secondary-hover: #a855f7; /* Purple-500 */
+  --color-secondary: #9333ea;
+  /* Purple-600 */
+  --color-secondary-hover: #a855f7;
+  /* Purple-500 */
   --font-sans: "Inter", system-ui, sans-serif;
 }
 
@@ -36,3 +38,20 @@ body {
 }
 
 
+
+@keyframes gradient {
+
+  0%,
+  100% {
+    background-position: 0% 50%;
+  }
+
+  50% {
+    background-position: 100% 50%;
+  }
+}
+
+.animate-gradient {
+  background-size: 200% auto;
+  animation: gradient 3s ease infinite;
+}

@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Mail, Lock, ArrowRight } from 'lucide-react';
+import { Mail, Lock, ArrowRight, Eye, EyeOff } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { toast } from 'react-toastify';
 
@@ -8,6 +8,7 @@ const Login = () => {
   const navigate = useNavigate();
   const { login } = useAuth(); 
   const [isLoading, setIsLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
   
   const [formData, setFormData] = useState({
     email: '',
@@ -16,10 +17,16 @@ const Login = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    
+    // 1. Hide password immediately upon submission attempt
+    setShowPassword(false);
     setIsLoading(true);
     
     try {
-      const result = await login(formData.email, formData.password);
+      // 2. Case insensitive handling
+      const normalizedEmail = formData.email.trim().toLowerCase();
+
+      const result = await login(normalizedEmail, formData.password);
       
       if (result.success) {
         toast.success('Welcome back to PowerFolio!');
@@ -49,6 +56,7 @@ const Login = () => {
 
         <form onSubmit={handleSubmit} className="space-y-6">
           <div className="space-y-4">
+            {/* Email Field */}
             <div>
               <label className="block text-sm font-medium text-gray-300 mb-1.5">Email Address</label>
               <div className="relative group">
@@ -64,21 +72,30 @@ const Login = () => {
               </div>
             </div>
 
+            {/* Password Field */}
             <div>
               <label className="block text-sm font-medium text-gray-300 mb-1.5">Password</label>
               <div className="relative group">
                 <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 group-focus-within:text-purple-500 transition-colors w-5 h-5" />
                 <input 
-                  type="password" 
+                  type={showPassword ? "text" : "password"} 
                   required
-                  className="w-full bg-black/40 border border-white/10 rounded-xl py-3 pl-12 pr-4 text-white focus:border-purple-500 focus:ring-1 focus:ring-purple-500 outline-none transition-all placeholder-gray-600"
+                  className="w-full bg-black/40 border border-white/10 rounded-xl py-3 pl-12 pr-12 text-white focus:border-purple-500 focus:ring-1 focus:ring-purple-500 outline-none transition-all placeholder-gray-600"
                   placeholder="••••••••"
                   value={formData.password}
                   onChange={(e) => setFormData({...formData, password: e.target.value})}
                 />
-              </div>
-              <div className="flex justify-end mt-2">
-                <a href="#" className="text-xs text-purple-400 hover:text-purple-300 transition-colors">Forgot Password?</a>
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-white transition-colors focus:outline-none"
+                >
+                  {showPassword ? (
+                    <EyeOff className="w-5 h-5" />
+                  ) : (
+                    <Eye className="w-5 h-5" />
+                  )}
+                </button>
               </div>
             </div>
           </div>

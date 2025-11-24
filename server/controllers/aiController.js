@@ -39,7 +39,7 @@ const enhanceText = asyncHandler(async (req, res) => {
       Original Text: "${text}"`;
     } else {
       // Generic fallback
-      prompt = `Your are professional technical writer for a student portfolio platform give detailed description with good formatting.Dont give any options give only one response and also dont give starting text like hey this your answer like that since this response is directly submitted in form."${text}"`;
+      prompt = `Your are professional technical writer for a student portfolio platform give detailed description with good formatting.Dont give any options give only one response and also dont give starting text like hey this your answer like that since this response is directly submitted in form.Dont give more text be a little brief and only use simple highlights and simple headings so frontend can display it clean and format it well"${text}"`;
     }
 
     // Call Gemini API

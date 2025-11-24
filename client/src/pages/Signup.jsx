@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { Mail, Lock, User, ArrowRight } from 'lucide-react';
+import { Mail, Lock, User, ArrowRight, Eye, EyeOff } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { toast } from 'react-toastify';
 
@@ -8,6 +8,10 @@ const Signup = () => {
   const navigate = useNavigate();
   const { signup } = useAuth();
   const [isLoading, setIsLoading] = useState(false);
+  
+  // State for toggling password visibility
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   
   const [formData, setFormData] = useState({
     name: '',
@@ -19,6 +23,10 @@ const Signup = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     
+    // Hide passwords immediately upon submission attempt for security
+    setShowPassword(false);
+    setShowConfirmPassword(false);
+
     if (formData.password !== formData.confirmPassword) {
       return toast.error("Passwords do not match!");
     }
@@ -29,9 +37,12 @@ const Signup = () => {
     setIsLoading(true);
     
     try {
+      // FIX: Convert email to lowercase and trim whitespace
+      const normalizedEmail = formData.email.trim().toLowerCase();
+
       const result = await signup({
         name: formData.name,
-        email: formData.email,
+        email: normalizedEmail,
         password: formData.password
       });
       
@@ -63,6 +74,7 @@ const Signup = () => {
 
         <form onSubmit={handleSubmit} className="space-y-5">
           
+          {/* Name Field */}
           <div>
             <label className="block text-sm font-medium text-gray-300 mb-1.5">Full Name</label>
             <div className="relative group">
@@ -78,6 +90,7 @@ const Signup = () => {
             </div>
           </div>
 
+          {/* Email Field */}
           <div>
             <label className="block text-sm font-medium text-gray-300 mb-1.5">Email Address</label>
             <div className="relative group">
@@ -94,32 +107,57 @@ const Signup = () => {
           </div>
 
           <div className="grid grid-cols-2 gap-4">
+            {/* Password Field */}
             <div>
               <label className="block text-sm font-medium text-gray-300 mb-1.5">Password</label>
               <div className="relative group">
                 <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 group-focus-within:text-purple-500 transition-colors w-5 h-5" />
                 <input 
-                  type="password" 
+                  type={showPassword ? "text" : "password"} 
                   required
-                  className="w-full bg-black/40 border border-white/10 rounded-xl py-3 pl-12 pr-4 text-white focus:border-purple-500 focus:ring-1 focus:ring-purple-500 outline-none transition-all placeholder-gray-600"
+                  className="w-full bg-black/40 border border-white/10 rounded-xl py-3 pl-12 pr-10 text-white focus:border-purple-500 focus:ring-1 focus:ring-purple-500 outline-none transition-all placeholder-gray-600 text-sm"
                   placeholder="••••••••"
                   value={formData.password}
                   onChange={(e) => setFormData({...formData, password: e.target.value})}
                 />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-white transition-colors focus:outline-none"
+                >
+                  {showPassword ? (
+                    <EyeOff className="w-4 h-4" />
+                  ) : (
+                    <Eye className="w-4 h-4" />
+                  )}
+                </button>
               </div>
             </div>
+
+            {/* Confirm Password Field */}
             <div>
               <label className="block text-sm font-medium text-gray-300 mb-1.5">Confirm</label>
               <div className="relative group">
                 <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 group-focus-within:text-purple-500 transition-colors w-5 h-5" />
                 <input 
-                  type="password" 
+                  type={showConfirmPassword ? "text" : "password"} 
                   required
-                  className="w-full bg-black/40 border border-white/10 rounded-xl py-3 pl-12 pr-4 text-white focus:border-purple-500 focus:ring-1 focus:ring-purple-500 outline-none transition-all placeholder-gray-600"
+                  className="w-full bg-black/40 border border-white/10 rounded-xl py-3 pl-12 pr-10 text-white focus:border-purple-500 focus:ring-1 focus:ring-purple-500 outline-none transition-all placeholder-gray-600 text-sm"
                   placeholder="••••••••"
                   value={formData.confirmPassword}
                   onChange={(e) => setFormData({...formData, confirmPassword: e.target.value})}
                 />
+                <button
+                  type="button"
+                  onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-white transition-colors focus:outline-none"
+                >
+                  {showConfirmPassword ? (
+                    <EyeOff className="w-4 h-4" />
+                  ) : (
+                    <Eye className="w-4 h-4" />
+                  )}
+                </button>
               </div>
             </div>
           </div>
